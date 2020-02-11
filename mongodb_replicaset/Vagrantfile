@@ -1,0 +1,50 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+BOX_IMAGE = "bento/amazonlinux-2"
+SLAVE_COUNT = 2
+START_IP = 10
+BOXES = ["master"]
+
+# Push number of slaves required based on the count
+hosts_file = "10.0.0.#{START_IP} master\n"
+
+# Push number of slaves required based on the count
+SLAVE_COUNT.times { |i| 
+    BOXES.push("slave#{i + 1}") 
+    hosts_file += "10.0.0.#{START_IP + i + 1} slave#{i + 1}\n"
+}
+
+open('mongodb-conf/hosts', 'w') { |f|
+  f.puts hosts_file
+}
+
+Vagrant.configure("2") do |config|
+
+  BOXES.each_with_index { |host, idx|
+    config.vm.define host do |subconfig|
+      subconfig.vm.box = BOX_IMAGE
+      subconfig.vm.hostname = host
+      subconfig.vm.network :private_network, ip: "10.0.0.#{START_IP + idx + 1}"
+      # If "synced_folder" is enabled, the owner of vagrant becomes
+      # owner of /data/db and mongod is not able to write a lock
+      # file in this directory
+      # subconfig.vm.synced_folder "data", "/data"
+      subconfig.vm.provider "virtualbox" do |vb|
+        vb.gui = false
+        vb.memory = "1024"
+      end
+      # Files to /etc or /lib cannot be directly copied
+      # So we do it to a temporary location and move it 
+      # from there
+      # Reference: https://stackoverflow.com/a/54099162/5305151
+      subconfig.vm.provision "file", source: "mongodb-conf/mongod.service", destination: "/tmp/mongod.service"
+      subconfig.vm.provision "file", source: "mongodb-conf/mongod.conf", destination: "/tmp/mongod.conf"
+      subconfig.vm.provision "file", source: "mongodb-conf/hosts", destination: "/tmp/hosts"
+      subconfig.vm.provision "shell", path: "./automate/init.sh"
+      subconfig.vm.provision "shell", path: "./automate/install.sh"
+      subconfig.vm.provision "shell", path: "./automate/config.sh"
+    end
+  }
+
+end
